@@ -121,3 +121,26 @@ target_link_libraries(Task18Verifier PRIVATE
     ${PCAP_LIBRARIES}
     pthread
 )
+
+add_executable(StressTest
+    tests/StressTest.cpp
+    src/core/Logger.cpp
+    src/core/eventbus/EventBus.cpp
+    src/core/models/PacketModel.cpp
+    src/core/parser/PacketParserPipeline.cpp
+    src/core/capture/SimulatedPacketSource.cpp
+    src/core/monitoring/MonitoringEngine.cpp
+    src/core/PacketFilter.cpp
+)
+
+target_include_directories(StressTest PRIVATE
+    include
+    ${PCAP_INCLUDE_DIRS}
+)
+target_compile_options(StressTest PRIVATE -Wall -Wextra -O2 -g ${PCAP_CFLAGS_OTHER})
+target_link_directories(StressTest PRIVATE ${PCAP_LIBRARY_DIRS})
+target_link_libraries(StressTest PRIVATE
+    Qt6::Core
+    ${PCAP_LIBRARIES}
+    pthread
+)
