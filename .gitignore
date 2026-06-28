@@ -1,0 +1,9 @@
+build/
+*.o
+*.a
+*.so
+*.log
+moc_*
+ui_*
+*.autosave
+netguardian_debug.log
