@@ -144,3 +144,18 @@ target_link_libraries(StressTest PRIVATE
     ${PCAP_LIBRARIES}
     pthread
 )
+
+add_executable(GUIStressTest
+    tests/GUIStressTest.cpp
+    ${CORE_SOURCES}
+    ${GUI_SOURCES}
+    ${MOC_GENERATED}
+)
+target_include_directories(GUIStressTest PRIVATE include ${PCAP_INCLUDE_DIRS})
+target_compile_options(GUIStressTest PRIVATE -Wall -Wextra -O2 -g ${PCAP_CFLAGS_OTHER})
+target_link_directories(GUIStressTest PRIVATE ${PCAP_LIBRARY_DIRS})
+target_link_libraries(GUIStressTest PRIVATE
+    Qt6::Widgets Qt6::Charts Qt6::Network Qt6::Core
+    ${PCAP_LIBRARIES}
+    pthread
+)

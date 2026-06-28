@@ -41,7 +41,7 @@ QString fieldRow(const QString &key, const QString &val,
 
 QString makeTable(const QString &title, const QString &titleColor,
                   const QList<QPair<QString, QString>> &fields,
-                  const QString &noteColor = "") {
+                  const QString & /*noteColor*/ = "") {
   QString html =
       QString("<div style='margin-bottom:14px;'>"
               "<div style='color:%2; font-size:8pt; font-weight:800; "
