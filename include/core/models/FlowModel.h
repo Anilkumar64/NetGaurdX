@@ -30,6 +30,7 @@ struct FlowKey {
   std::string dst_ip;
   uint16_t src_port{0};
   uint16_t dst_port{0};
+  Protocol protocol{Protocol::UNKNOWN};
 
   bool operator==(const FlowKey &o) const noexcept {
     return src_ip == o.src_ip && dst_ip == o.dst_ip && src_port == o.src_port &&
