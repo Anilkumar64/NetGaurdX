@@ -1,44 +1,44 @@
 #pragma once
-#include "core/models/PacketModel.h"
+#include "core/eventbus/EventBus.h"
 #include "core/models/FlowModel.h"
 #include "core/models/MetricsModel.h"
-#include <thread>
+#include "core/models/PacketModel.h"
 #include <atomic>
-#include <unordered_map>
-#include <mutex>
-#include <vector>
 #include <chrono>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
 
-class MonitoringEngine
-{
+class MonitoringEngine {
 public:
-    MonitoringEngine()  = default;
-    ~MonitoringEngine() { stop(); }
+  MonitoringEngine() = default;
+  ~MonitoringEngine() { stop(); }
 
-    void start();
-    void stop();
+  void start();
+  void stop();
 
-    void ingestPacket(const UnifiedPacket &pkt);
+  void ingestPacket(const UnifiedPacket &pkt);
 
-    NetworkMetrics    getMetricsCopy()  const;
-    std::vector<Flow> getActiveFlows()  const;
+  NetworkMetrics getMetricsCopy() const;
+  std::vector<Flow> getActiveFlows() const;
 
 private:
-    void monitorLoop();
-    void computeMetrics();
-    void detectAnomalies();
+  void monitorLoop();
+  void computeMetrics();
+  void detectAnomalies();
 
-    void updateFlow(const UnifiedPacket &pkt);
-    void updateTCPState(Flow &flow, const UnifiedPacket &pkt);
+  void updateFlow(const UnifiedPacket &pkt);
+  void updateTCPState(Flow &flow, const UnifiedPacket &pkt,
+                      std::vector<Event> &events_to_publish)
 
-    NetworkMetrics metrics_;
-    std::unordered_map<uint32_t, Flow> flows_;
-    mutable std::mutex flows_mutex_;
+      std::unordered_map<uint32_t, Flow> flows_;
+  mutable std::mutex flows_mutex_;
 
-    std::thread monitor_thread_;
-    std::atomic<bool> running_{false};
+  std::thread monitor_thread_;
+  std::atomic<bool> running_{false};
 
-    uint64_t last_total_packets_{0};
-    uint64_t last_total_bytes_{0};
-    std::chrono::steady_clock::time_point last_compute_time_;
+  uint64_t last_total_packets_{0};
+  uint64_t last_total_bytes_{0};
+  std::chrono::steady_clock::time_point last_compute_time_;
 };

@@ -2,17 +2,17 @@
 #include "core/Logger.h"
 #include "core/eventbus/EventBus.h"
 #include <algorithm>
+#include <optional>
 #include <tuple>
+#include <vector>
 
 namespace {
 constexpr std::size_t kMaxPacketIdsPerFlow = 1000;
 constexpr double kClosedFlowRetentionSeconds = 60.0;
 
 FlowKey normalizedFlowKey(const UnifiedPacket &pkt) {
-  FlowKey forward{pkt.src_ip, pkt.dst_ip, pkt.src_port, pkt.dst_port,
-                  pkt.protocol};
-  FlowKey reverse{pkt.dst_ip, pkt.src_ip, pkt.dst_port, pkt.src_port,
-                  pkt.protocol};
+  FlowKey forward{pkt.src_ip, pkt.dst_ip, pkt.src_port, pkt.dst_port};
+  FlowKey reverse{pkt.dst_ip, pkt.src_ip, pkt.dst_port, pkt.src_port};
   const auto lhs = std::tie(forward.src_ip, forward.src_port, forward.dst_ip,
                             forward.dst_port);
   const auto rhs = std::tie(reverse.src_ip, reverse.src_port, reverse.dst_ip,
@@ -79,39 +79,47 @@ void MonitoringEngine::updateFlow(const UnifiedPacket &pkt) {
   FlowKey key = normalizedFlowKey(pkt);
   uint32_t flow_id = pkt.flow_id != 0 ? pkt.flow_id : flowIdFromKey(key);
 
-  std::lock_guard<std::mutex> lock(flows_mutex_);
-  auto it = flows_.find(flow_id);
-  if (it == flows_.end()) {
-    Flow flow{};
-    flow.flow_id = flow_id;
-    flow.key = key;
-    flow.tcp_state = TCPState::CLOSED;
-    flow.first_seen = pkt.timestamp;
-    flow.last_seen = pkt.timestamp;
-    flow.is_active = true;
-    flow.stats.packet_count = 1;
-    flow.stats.byte_count = pkt.packet_size;
-    appendPacketId(flow, pkt.id);
-    updateDirectionalSequenceStats(flow, pkt);
-    updateTCPState(flow, pkt);
-    flows_[flow_id] = flow;
-    metrics_.active_flows.fetch_add(1);
-    EventBus::instance().publish({EventType::FLOW_CREATED, pkt.timestamp,
-                                  "New flow", "L4", "INFO", flows_[flow_id]});
-  } else {
-    Flow &flow = it->second;
-    flow.last_seen = pkt.timestamp;
-    flow.stats.packet_count++;
-    flow.stats.byte_count += pkt.packet_size;
-    appendPacketId(flow, pkt.id);
-    updateDirectionalSequenceStats(flow, pkt);
-    updateTCPState(flow, pkt);
-    EventBus::instance().publish({EventType::FLOW_UPDATED, pkt.timestamp,
-                                  "Flow updated", "L4", "INFO", flow});
-  }
+  std::vector<Event> events_to_publish;
+
+  {
+    std::lock_guard<std::mutex> lock(flows_mutex_);
+    auto it = flows_.find(flow_id);
+    if (it == flows_.end()) {
+      Flow flow{};
+      flow.flow_id = flow_id;
+      flow.key = key;
+      flow.tcp_state = TCPState::CLOSED;
+      flow.first_seen = pkt.timestamp;
+      flow.last_seen = pkt.timestamp;
+      flow.is_active = true;
+      flow.stats.packet_count = 1;
+      flow.stats.byte_count = pkt.packet_size;
+      appendPacketId(flow, pkt.id);
+      updateDirectionalSequenceStats(flow, pkt);
+      updateTCPState(flow, pkt, events_to_publish);
+      flows_[flow_id] = flow;
+      metrics_.active_flows.fetch_add(1);
+      events_to_publish.push_back({EventType::FLOW_CREATED, pkt.timestamp,
+                                   "New flow", "L4", "INFO", flows_[flow_id]});
+    } else {
+      Flow &flow = it->second;
+      flow.last_seen = pkt.timestamp;
+      flow.stats.packet_count++;
+      flow.stats.byte_count += pkt.packet_size;
+      appendPacketId(flow, pkt.id);
+      updateDirectionalSequenceStats(flow, pkt);
+      updateTCPState(flow, pkt, events_to_publish);
+      events_to_publish.push_back({EventType::FLOW_UPDATED, pkt.timestamp,
+                                   "Flow updated", "L4", "INFO", flow});
+    }
+  } // lock released here
+
+  for (auto &evt : events_to_publish)
+    EventBus::instance().publish(evt);
 }
 
-void MonitoringEngine::updateTCPState(Flow &flow, const UnifiedPacket &pkt) {
+void MonitoringEngine::updateTCPState(Flow &flow, const UnifiedPacket &pkt,
+                                      std::vector<Event> &events_to_publish) {
   if (!pkt.has_tcp)
     return;
 
@@ -119,8 +127,8 @@ void MonitoringEngine::updateTCPState(Flow &flow, const UnifiedPacket &pkt) {
 
   if (pkt.tcp_flags & 0x04) { // RST
     flow.tcp_state = TCPState::CLOSED;
-    EventBus::instance().publish({EventType::ALERT_TCP_RESET, pkt.timestamp,
-                                  "TCP Reset", "L4", "WARN", flow.flow_id});
+    events_to_publish.push_back({EventType::ALERT_TCP_RESET, pkt.timestamp,
+                                 "TCP Reset", "L4", "WARN", flow.flow_id});
   } else if (old_state == TCPState::CLOSED && (pkt.tcp_flags & 0x02)) {
     flow.tcp_state = TCPState::SYN_SENT;
   } else if (old_state == TCPState::SYN_SENT &&
@@ -145,10 +153,11 @@ void MonitoringEngine::updateTCPState(Flow &flow, const UnifiedPacket &pkt) {
       while (active > 0 &&
              !metrics_.active_flows.compare_exchange_weak(active, active - 1)) {
       }
-      EventBus::instance().publish({EventType::FLOW_CLOSED, pkt.timestamp,
-                                    "Flow closed", "L4", "INFO", flow.flow_id});
+      events_to_publish.push_back({EventType::FLOW_CLOSED, pkt.timestamp,
+                                   "Flow closed", "L4", "INFO", flow.flow_id});
     }
   }
+
   flow.stats.last_ack_seen = std::max(flow.stats.last_ack_seen, pkt.ack_num);
 }
 
@@ -187,8 +196,7 @@ std::vector<Flow> MonitoringEngine::getActiveFlows() const {
 void MonitoringEngine::monitorLoop() {
   while (running_) {
     std::this_thread::sleep_for(std::chrono::seconds(1));
-    detectAnomalies(); // detect BEFORE snapshots are updated
-    computeMetrics();  // snapshots updated here
+    computeMetrics(); // anomaly detection now happens inside, same lock pass
   }
 }
 
@@ -200,45 +208,62 @@ void MonitoringEngine::computeMetrics() {
 
   uint64_t cur_pkts = metrics_.total_packets.load();
   uint64_t cur_bytes = metrics_.total_bytes.load();
-
   uint64_t delta_pkts = cur_pkts - last_total_packets_;
   uint64_t delta_bytes = cur_bytes - last_total_bytes_;
-
   metrics_.packets_per_second = static_cast<uint64_t>(delta_pkts / dt);
   metrics_.bytes_per_second = static_cast<uint64_t>(delta_bytes / dt);
 
   uint64_t retransmissions = 0;
   uint64_t packets = 0;
+  std::vector<Event> anomaly_events;
+
   {
     std::lock_guard<std::mutex> lock(flows_mutex_);
     double current_ts = std::chrono::duration<double>(
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
+
     for (auto it = flows_.begin(); it != flows_.end();) {
       if (!it->second.is_active &&
           (current_ts - it->second.last_seen > kClosedFlowRetentionSeconds)) {
         it = flows_.erase(it);
       } else {
-        // Delta-based: only count what happened since last interval
         uint64_t flow_pkts = it->second.stats.packet_count;
         uint64_t flow_retx = it->second.stats.retransmissions;
 
-        packets += flow_pkts > it->second.stats.last_pkt_snapshot
-                       ? flow_pkts - it->second.stats.last_pkt_snapshot
-                       : 0;
-        retransmissions += flow_retx > it->second.stats.last_retx_snapshot
-                               ? flow_retx - it->second.stats.last_retx_snapshot
-                               : 0;
+        uint64_t d_pkts = flow_pkts > it->second.stats.last_pkt_snapshot
+                              ? flow_pkts - it->second.stats.last_pkt_snapshot
+                              : 0;
+        uint64_t d_retx = flow_retx > it->second.stats.last_retx_snapshot
+                              ? flow_retx - it->second.stats.last_retx_snapshot
+                              : 0;
+
+        if (d_pkts > 0) {
+          double rate =
+              static_cast<double>(d_retx) / static_cast<double>(d_pkts);
+          if (rate > 0.05) {
+            anomaly_events.push_back({EventType::ALERT_HIGH_RETRANSMISSION, 0.0,
+                                      "High retransmission rate", "L4", "WARN",
+                                      it->second.flow_id});
+          }
+        }
+
+        packets += d_pkts;
+        retransmissions += d_retx;
 
         it->second.stats.last_pkt_snapshot = flow_pkts;
         it->second.stats.last_retx_snapshot = flow_retx;
         ++it;
       }
     }
+
     metrics_.active_flows.store(static_cast<uint32_t>(
         std::count_if(flows_.begin(), flows_.end(),
                       [](const auto &kv) { return kv.second.is_active; })));
-  }
+  } // lock released
+
+  for (auto &evt : anomaly_events)
+    EventBus::instance().publish(evt);
 
   metrics_.retransmission_rate.store(
       packets == 0 ? 0.0
@@ -268,34 +293,4 @@ void MonitoringEngine::computeMetrics() {
   EventBus::instance().publish({EventType::METRICS_UPDATED, 0.0,
                                 "Metrics updated", "APP", "INFO",
                                 std::string{}});
-}
-
-void MonitoringEngine::detectAnomalies() {
-  std::lock_guard<std::mutex> lock(flows_mutex_);
-
-  for (const auto &kv : flows_) {
-    const Flow &flow = kv.second;
-
-    // Use delta since last interval, not lifetime totals
-    uint64_t delta_pkts =
-        flow.stats.packet_count > flow.stats.last_pkt_snapshot
-            ? flow.stats.packet_count - flow.stats.last_pkt_snapshot
-            : 0;
-    uint64_t delta_retx =
-        flow.stats.retransmissions > flow.stats.last_retx_snapshot
-            ? flow.stats.retransmissions - flow.stats.last_retx_snapshot
-            : 0;
-
-    if (delta_pkts == 0)
-      continue;
-
-    double rate =
-        static_cast<double>(delta_retx) / static_cast<double>(delta_pkts);
-
-    if (rate > 0.05) {
-      EventBus::instance().publish({EventType::ALERT_HIGH_RETRANSMISSION, 0.0,
-                                    "High retransmission rate", "L4", "WARN",
-                                    flow.flow_id});
-    }
-  }
 }

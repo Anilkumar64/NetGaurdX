@@ -30,11 +30,10 @@ struct FlowKey {
   std::string dst_ip;
   uint16_t src_port{0};
   uint16_t dst_port{0};
-  Protocol protocol{Protocol::UNKNOWN};
 
   bool operator==(const FlowKey &o) const noexcept {
     return src_ip == o.src_ip && dst_ip == o.dst_ip && src_port == o.src_port &&
-           dst_port == o.dst_port && protocol == o.protocol;
+           dst_port == o.dst_port;
   }
 };
 
@@ -49,7 +48,6 @@ template <> struct hash<FlowKey> {
     mix(std::hash<std::string>{}(k.dst_ip));
     mix(std::hash<uint16_t>{}(k.src_port));
     mix(std::hash<uint16_t>{}(k.dst_port));
-    mix(std::hash<int>{}(static_cast<int>(k.protocol)));
     return h;
   }
 };

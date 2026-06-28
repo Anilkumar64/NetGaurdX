@@ -233,9 +233,10 @@ bool AppController::startCapture(const QString &interface_name,
                                 "Interface changed to " + iface, "APP", "INFO",
                                 iface});
 
-  if (getuid() != 0) {
-    Logger::instance().log(LogLevel::WARN, "CAPTURE",
-                           "not root - switching to simulation mode");
+  if (getuid() != 0 || iface == "lo") {
+    Logger::instance().log(
+        LogLevel::WARN, "CAPTURE",
+        "not root or loopback interface - switching to simulation mode");
     use_simulation_ = true;
   } else {
     use_simulation_ = false;
