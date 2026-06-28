@@ -290,9 +290,14 @@ void EndToEndFlowTab::upsertFlow(const Flow &flow) {
       row, 2,
       new QTableWidgetItem(QString::fromStdString(flow.key.dst_ip) + ":" +
                            QString::number(flow.key.dst_port)));
-  flow_table_->setItem(row, 3,
-                       new QTableWidgetItem(QString::fromStdString(
-                           protocolToString(flow.key.protocol))));
+  flow_table_->setItem(
+      row, 3,
+      new QTableWidgetItem(QString::fromStdString(protocolToString(
+          flow.key.dst_port == 443 || flow.key.src_port == 443 ? Protocol::HTTPS
+          : flow.key.dst_port == 53 || flow.key.src_port == 53 ? Protocol::DNS
+          : flow.key.dst_port == 80 || flow.key.src_port == 80
+              ? Protocol::HTTP
+              : Protocol::TCP))));
   flow_table_->setItem(
       row, 4, new QTableWidgetItem(QString::number(flow.stats.packet_count)));
   flow_table_->setItem(row, 5,

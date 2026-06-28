@@ -204,7 +204,7 @@ void PacketDeepDiveTab::renderPacket(const UnifiedPacket &pkt,
         QString("  Flow %1  ·  %2  ·  %3 pkts  ·  %4 B  ·  RTT %5 ms  ·  retx "
                 "%6  ·  %7")
             .arg(f.flow_id)
-            .arg(QString::fromStdString(protocolToString(f.key.protocol)))
+            .arg(QString::fromStdString(protocolToString(pkt.protocol)))
             .arg(f.stats.packet_count)
             .arg(f.stats.byte_count)
             .arg(f.stats.rtt_ms, 0, 'f', 1)

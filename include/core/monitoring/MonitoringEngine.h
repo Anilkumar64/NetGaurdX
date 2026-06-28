@@ -30,9 +30,9 @@ private:
 
   void updateFlow(const UnifiedPacket &pkt);
   void updateTCPState(Flow &flow, const UnifiedPacket &pkt,
-                      std::vector<Event> &events_to_publish)
-
-      std::unordered_map<uint32_t, Flow> flows_;
+                      std::vector<Event> &events_to_publish);
+  NetworkMetrics metrics_;
+  std::unordered_map<uint32_t, Flow> flows_;
   mutable std::mutex flows_mutex_;
 
   std::thread monitor_thread_;
