@@ -21,21 +21,22 @@
 //        - auto-healing executes a real command successfully
 //
 // Run with:   ./GUIStressTest
-// Build:      add target GUIStressTest to CMakeLists.txt (see bottom of this file)
+// Build:      add target GUIStressTest to CMakeLists.txt (see bottom of this
+// file)
 
 #include <QApplication>
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QPushButton>
 #include <QTabWidget>
 #include <QTableWidget>
 #include <QThread>
 #include <QTimer>
-#include <QPushButton>
-#include <iostream>
 #include <atomic>
-#include <thread>
 #include <chrono>
+#include <iostream>
 #include <optional>
+#include <thread>
 
 #include "core/AppController.h"
 #include "core/Logger.h"
@@ -49,7 +50,8 @@
 static void pass(const char *name) { std::cout << "PASS " << name << '\n'; }
 static void fail(const char *name, const char *reason = "") {
   std::cout << "FAIL " << name;
-  if (reason && reason[0]) std::cout << " (" << reason << ')';
+  if (reason && reason[0])
+    std::cout << " (" << reason << ')';
   std::cout << '\n';
 }
 static void check(bool ok, const char *name, const char *reason = "") {
@@ -73,7 +75,8 @@ static bool waitUntil(const std::function<bool()> &pred, int timeout_ms) {
   while (t.elapsed() < timeout_ms) {
     QCoreApplication::processEvents(QEventLoop::AllEvents, 20);
     QThread::msleep(10);
-    if (pred()) return true;
+    if (pred())
+      return true;
   }
   return pred();
 }
@@ -81,16 +84,19 @@ static bool waitUntil(const std::function<bool()> &pred, int timeout_ms) {
 // Find the 8-tab QTabWidget inside MainWindow
 static QTabWidget *findAnalysisTabs(MainWindow &w) {
   for (auto *tw : w.findChildren<QTabWidget *>())
-    if (tw->count() == 8) return tw;
+    if (tw->count() == 8)
+      return tw;
   return nullptr;
 }
 
 // Find the packet stream table (6 columns, header col-1 == "Proto")
 static QTableWidget *findStreamTable(MainWindow &w) {
   for (auto *t : w.findChildren<QTableWidget *>()) {
-    if (t->columnCount() != 6) continue;
+    if (t->columnCount() != 6)
+      continue;
     auto *h = t->horizontalHeaderItem(1);
-    if (h && h->text() == "Proto") return t;
+    if (h && h->text() == "Proto")
+      return t;
   }
   return nullptr;
 }
@@ -109,17 +115,17 @@ int main(int argc, char **argv) {
 
   // ── Setup ──────────────────────────────────────────────────────────────────
   AppController controller;
-  MainWindow    window(&controller);
+  MainWindow window(&controller);
   window.show();
   processFor(100); // let Qt lay out widgets
 
-  auto *tabs         = findAnalysisTabs(window);
+  auto *tabs = findAnalysisTabs(window);
   auto *stream_table = findStreamTable(window);
-  auto *ctx_mgr      = window.findChild<PacketContextManager *>();
+  auto *ctx_mgr = window.findChild<PacketContextManager *>();
 
-  check(tabs         != nullptr, "found 8-tab analysis widget");
+  check(tabs != nullptr, "found 8-tab analysis widget");
   check(stream_table != nullptr, "found packet stream table");
-  check(ctx_mgr      != nullptr, "found PacketContextManager");
+  check(ctx_mgr != nullptr, "found PacketContextManager");
 
   if (!tabs || !stream_table || !ctx_mgr) {
     std::cout << "FATAL: core widgets missing, aborting\n";
@@ -132,19 +138,21 @@ int main(int argc, char **argv) {
   check(started, "capture started in simulation mode");
 
   // Wait for first packets to appear in stream table
-  const bool got_packets = waitUntil(
-      [&] { return stream_table->rowCount() > 0; }, 5000);
+  const bool got_packets =
+      waitUntil([&] { return stream_table->rowCount() > 0; }, 5000);
   check(got_packets, "packets appear in stream table within 5s");
 
-  // ── Phase 2: 15-second flood with concurrent GUI hammering ──────────────────
-  std::cout << "\n--- Phase 2: 15s flood — cycling tabs, selecting packets, injecting events\n";
+  // ── Phase 2: 15-second flood with concurrent GUI hammering
+  // ──────────────────
+  std::cout << "\n--- Phase 2: 15s flood — cycling tabs, selecting packets, "
+               "injecting events\n";
 
   std::atomic<bool> flood_running{true};
-  std::atomic<int>  tab_switches{0};
-  std::atomic<int>  packet_selections{0};
-  std::atomic<int>  filter_churns{0};
-  std::atomic<int>  diag_runs{0};
-  std::atomic<int>  alert_injections{0};
+  std::atomic<int> tab_switches{0};
+  std::atomic<int> packet_selections{0};
+  std::atomic<int> filter_churns{0};
+  std::atomic<int> diag_runs{0};
+  std::atomic<int> alert_injections{0};
 
   // ── Background: inject alert events from a separate thread ────────────────
   // (EventBus is thread-safe; this is exactly the real-world pattern)
@@ -158,12 +166,9 @@ int main(int argc, char **argv) {
           EventType::ALERT_HIGH_RETRANSMISSION,
           EventType::ALERT_TCP_RESET,
       };
-      EventBus::instance().publish({
-          types[seq % 4], 0.0,
-          "stress-inject-" + std::to_string(seq),
-          "L4", "WARN",
-          std::string{"stress.example.com"}
-      });
+      EventBus::instance().publish(
+          {types[seq % 4], 0.0, "stress-inject-" + std::to_string(seq), "L4",
+           "WARN", std::string{"stress.example.com"}});
       seq++;
       alert_injections++;
     }
@@ -198,7 +203,7 @@ int main(int argc, char **argv) {
 
     // Apply / clear BPF filter every 3rd cycle
     if (cycle % 3 == 0) {
-      controller.applyFilter(cycle % 6 == 0 ? "tcp" : "");
+      controller.applyFilter(cycle % 6 == 0 ? "protocol == TCP" : "");
       filter_churns++;
     }
 
@@ -248,8 +253,7 @@ int main(int argc, char **argv) {
 
   // Metrics sane
   auto metrics = controller.getMetricsCopy();
-  check(metrics.total_packets.load() > 0,
-        "total_packets > 0 after flood");
+  check(metrics.total_packets.load() > 0, "total_packets > 0 after flood");
   check(metrics.active_flows.load() > 0 || metrics.total_packets.load() > 0,
         "flow tracking active during flood");
 
@@ -258,8 +262,7 @@ int main(int argc, char **argv) {
             << " retx_rate=" << metrics.retransmission_rate.load() << '\n';
 
   // Packets visible in stream
-  check(stream_table->rowCount() > 0,
-        "stream table has rows after flood");
+  check(stream_table->rowCount() > 0, "stream table has rows after flood");
 
   // PacketContextManager has a valid context
   bool has_ctx = ctx_mgr->hasContext() && ctx_mgr->current().valid;
@@ -278,8 +281,8 @@ int main(int argc, char **argv) {
   check(startStop_ok, "5× start/stop cycles survive under GUI");
 
   // Wait for packets again after restart
-  const bool packets_after_restart = waitUntil(
-      [&] { return stream_table->rowCount() > 0; }, 4000);
+  const bool packets_after_restart =
+      waitUntil([&] { return stream_table->rowCount() > 0; }, 4000);
   check(packets_after_restart, "packets flow after restart");
 
   // ── Phase 5: Stop + verify all tabs go idle ────────────────────────────────
@@ -290,7 +293,8 @@ int main(int argc, char **argv) {
   bool tabs_idle = true;
   for (int t = 0; t < tabs->count(); t++) {
     // Each tab sets activePacketId property to 0 when cleared
-    tabs_idle &= (tabs->widget(t)->property("activePacketId").toULongLong() == 0);
+    tabs_idle &=
+        (tabs->widget(t)->property("activePacketId").toULongLong() == 0);
   }
   check(tabs_idle, "all tabs idle after capture stop");
 
@@ -326,11 +330,13 @@ int main(int argc, char **argv) {
   std::optional<HealingResult> heal_result;
   QObject::connect(&controller, &AppController::newEvent,
                    [&](const Event &evt) {
-    if (evt.type != EventType::HEALING_ACTION) return;
-    try {
-      heal_result = std::any_cast<HealingResult>(evt.payload);
-    } catch (...) {}
-  });
+                     if (evt.type != EventType::HEALING_ACTION)
+                       return;
+                     try {
+                       heal_result = std::any_cast<HealingResult>(evt.payload);
+                     } catch (...) {
+                     }
+                   });
 
   controller.executeHealing(
       {"VERIFY_STACK", "Verify TCP/IP stack", "ip -s link", false});
@@ -338,9 +344,9 @@ int main(int argc, char **argv) {
 
   check(heal_result.has_value(), "healing result received");
   if (heal_result) {
-    check(heal_result->executed,  "healing command was executed");
+    check(heal_result->executed, "healing command was executed");
     check(heal_result->exit_code == 0, "healing command exit code 0");
-    check(heal_result->success,   "healing reported success");
+    check(heal_result->success, "healing reported success");
   }
 
   // ── Phase 8: Tab-specific slot bombardment ────────────────────────────────
@@ -359,8 +365,7 @@ int main(int argc, char **argv) {
       }
       if (i % 10 == 0) {
         EventBus::instance().publish({EventType::METRICS_UPDATED, 0.0,
-                                      "bombard", "SYS", "INFO",
-                                      std::string{}});
+                                      "bombard", "SYS", "INFO", std::string{}});
         QCoreApplication::processEvents(QEventLoop::AllEvents, 5);
       }
     }
@@ -385,7 +390,8 @@ int main(int argc, char **argv) {
   check(empty_ok, "all 8 tabs handle empty/cleared context");
 
   // ── Summary ────────────────────────────────────────────────────────────────
-  std::cout << "\n=== GUIStressTest complete — if you see this line, no crash ===\n";
+  std::cout
+      << "\n=== GUIStressTest complete — if you see this line, no crash ===\n";
   return 0;
 }
 
@@ -399,10 +405,10 @@ add_executable(GUIStressTest
     ${MOC_GENERATED}
 )
 target_include_directories(GUIStressTest PRIVATE include ${PCAP_INCLUDE_DIRS})
-target_compile_options(GUIStressTest PRIVATE -Wall -Wextra -O2 -g ${PCAP_CFLAGS_OTHER})
-target_link_directories(GUIStressTest PRIVATE ${PCAP_LIBRARY_DIRS})
-target_link_libraries(GUIStressTest PRIVATE
-    Qt6::Widgets Qt6::Charts Qt6::Network Qt6::Core
+target_compile_options(GUIStressTest PRIVATE -Wall -Wextra -O2 -g
+${PCAP_CFLAGS_OTHER}) target_link_directories(GUIStressTest PRIVATE
+${PCAP_LIBRARY_DIRS}) target_link_libraries(GUIStressTest PRIVATE Qt6::Widgets
+Qt6::Charts Qt6::Network Qt6::Core
     ${PCAP_LIBRARIES} pthread
 )
 
